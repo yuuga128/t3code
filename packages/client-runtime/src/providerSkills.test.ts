@@ -195,6 +195,15 @@ describe("resolveProviderSkillSourceKind", () => {
     ).toBe("app");
   });
 
+  it("marks Claude plugin skills as app installs", () => {
+    expect(
+      resolveProviderSkillSourceKind({
+        path: "/Users/julius/.claude/plugins/cache/impeccable/impeccable/4.4.0/skills/impeccable/SKILL.md",
+        scope: "plugin",
+      }),
+    ).toBe("app");
+  });
+
   it("maps standard scopes to source kinds", () => {
     expect(
       resolveProviderSkillSourceKind({
