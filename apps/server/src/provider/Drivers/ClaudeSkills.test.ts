@@ -686,4 +686,236 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       assert.deepEqual(skills, []);
     }),
   );
+
+  // Registers `probe@probe-market` the way the CLI's installer does, with the
+  // plugin body at `installPath`.
+  const installPlugin = Effect.fn(function* (
+    configDir: string,
+    installPath: string,
+    manifest: Record<string, unknown> | undefined,
+  ) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    yield* fs.makeDirectory(path.join(configDir, "plugins"), { recursive: true });
+    yield* fs.writeFileString(
+      path.join(configDir, "plugins", "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "probe@probe-market": [{ scope: "user", installPath, version: "1.0.0" }] },
+      }),
+    );
+    if (manifest) {
+      yield* fs.makeDirectory(path.join(installPath, ".claude-plugin"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(installPath, ".claude-plugin", "plugin.json"),
+        JSON.stringify(manifest),
+      );
+    }
+  });
+
+  const writeSettings = Effect.fn(function* (settingsPath: string, settings: unknown) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    yield* fs.makeDirectory(path.dirname(settingsPath), { recursive: true });
+    yield* fs.writeFileString(settingsPath, JSON.stringify(settings));
+  });
+
+  it.effect("publishes enabled plugin skills under the manifest name", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const installPath = path.join(
+        configDir,
+        "plugins",
+        "cache",
+        "probe-market",
+        "probe",
+        "1.0.0",
+      );
+
+      // Verified against the CLI: the manifest name wins over the install
+      // key, and a manifest `skills` path is scanned alongside `skills/`.
+      yield* installPlugin(configDir, installPath, {
+        name: "manifestname",
+        version: "1.0.0",
+        skills: "./custom/",
+      });
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "name: other-name", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSkill(
+        path.join(installPath, "custom"),
+        "world",
+        ["---", "description: Probe world.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(configDir, "settings.json"), {
+        enabledPlugins: { "probe@probe-market": true },
+      });
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+
+      assert.deepEqual(skills, [
+        {
+          name: "manifestname:hello",
+          path: path.join(installPath, "skills", "hello", "SKILL.md"),
+          enabled: true,
+          scope: "plugin",
+          description: "Probe hello.",
+        },
+        {
+          name: "manifestname:world",
+          path: path.join(installPath, "custom", "world", "SKILL.md"),
+          enabled: true,
+          scope: "plugin",
+          description: "Probe world.",
+        },
+      ]);
+    }),
+  );
+
+  it.effect("names a plugin without a manifest by its install key", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const installPath = path.join(tempDir, "probe-plugin");
+
+      yield* installPlugin(configDir, installPath, undefined);
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(configDir, "settings.json"), {
+        enabledPlugins: { "probe@probe-market": true },
+      });
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+
+      assert.deepEqual(
+        skills.map((skill) => skill.name),
+        ["probe:hello"],
+      );
+    }),
+  );
+
+  it.effect("ignores an installed plugin that is not enabled", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const installPath = path.join(tempDir, "probe-plugin");
+
+      // Verified against the CLI: an install record with no `enabledPlugins`
+      // entry publishes nothing, so offering it would dispatch a dead command.
+      yield* installPlugin(configDir, installPath, { name: "probe" });
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(configDir, "settings.json"), {});
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+
+      assert.deepEqual(skills, []);
+    }),
+  );
+
+  it.effect("loads a plugin enabled only in the workspace settings", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const workspace = path.join(tempDir, "workspace");
+      const installPath = path.join(tempDir, "probe-plugin");
+
+      yield* installPlugin(configDir, installPath, { name: "probe" });
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(workspace, ".claude", "settings.json"), {
+        enabledPlugins: { "probe@probe-market": true },
+      });
+
+      const inWorkspace = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+      const elsewhere = yield* discoverClaudeSkills(
+        { homePath: configDir },
+        path.join(tempDir, "other-workspace"),
+      );
+
+      assert.deepEqual(
+        inWorkspace.map((skill) => skill.name),
+        ["probe:hello"],
+      );
+      assert.deepEqual(elsewhere, []);
+    }),
+  );
+
+  it.effect("lets a later settings file switch a plugin off", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const workspace = path.join(tempDir, "workspace");
+      const installPath = path.join(tempDir, "probe-plugin");
+
+      yield* installPlugin(configDir, installPath, { name: "probe" });
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(configDir, "settings.json"), {
+        enabledPlugins: { "probe@probe-market": true },
+      });
+      yield* writeSettings(path.join(workspace, ".claude", "settings.json"), {
+        enabledPlugins: { "probe@probe-market": false },
+      });
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir }, workspace);
+
+      assert.deepEqual(skills, []);
+    }),
+  );
+
+  it.effect("leaves plugin skills untouched by skillOverrides", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-skills-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const installPath = path.join(tempDir, "probe-plugin");
+
+      // Verified against the CLI: `probe:hello` stays in its slash commands
+      // with either override key, while the same `off` drops a user skill.
+      yield* installPlugin(configDir, installPath, { name: "probe" });
+      yield* writeSkill(
+        path.join(installPath, "skills"),
+        "hello",
+        ["---", "description: Probe hello.", "---"].join("\n"),
+      );
+      yield* writeSettings(path.join(configDir, "settings.json"), {
+        enabledPlugins: { "probe@probe-market": true },
+        skillOverrides: { "probe:hello": "off", hello: "off" },
+      });
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+
+      assert.deepEqual(
+        skills.map((skill) => ({ name: skill.name, enabled: skill.enabled })),
+        [{ name: "probe:hello", enabled: true }],
+      );
+    }),
+  );
 });
