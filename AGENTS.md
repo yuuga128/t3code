@@ -168,3 +168,54 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## This fork (yuuga128/t3code)
+
+This checkout is `yuuga128/t3code`, a personal fork of `pingdotgg/t3code` for the fork owner's own features. Everything above this heading is upstream's and stays exactly as upstream wrote it, so upstream syncs merge cleanly; fork rules live in this section, the "Agent skills" block after it, and the fork-only files they name. Where they disagree with the text above, they win.
+
+- **We.** In this fork, "we", "us" and "maintainers" mean the fork owner: the person you are talking to.
+- **User-only skills.** Many skills here start only when the fork owner types their slash command. When a step calls for one, name the command and say in one line why now, then wait for them to type it. Before recommending a skill, read its `SKILL.md`. Which one fits when: `docs/agents/skills.md`.
+- **Pull requests.** When a piece of work is complete and its checks pass, say in one line that it is ready for a PR: what it holds and why now. Open it once the fork owner says yes; being asked for a PR is the yes. Every `gh pr create` passes `--repo yuuga128/t3code`, and `pingdotgg/t3code` receives no PRs, issues or comments. The owner merges, or asks an agent to run `gh pr merge --merge`. Upstream's "Pull requests" rules for titles, bodies, evidence and scope still apply.
+- **Upstream sync.** When the owner asks to sync upstream: `git fetch upstream`, merge `upstream/main` into `main` (conflicts go through the `resolving-merge-conflicts` skill), run the checks for what the conflicts touched, and push `main` to `origin`. History is merged, so `main` is never rebased or force-pushed.
+- **Durable rules** for agents live in this section or a doc it points to, edited with `/writing-for-agents`. Auto-memory holds none of them.
+
+### Session types
+
+One session does one kind of work:
+
+- **Deciding:** `/wayfinder`, `/grill-with-docs`, `/grill-me` and the `grilling` skill settle decisions and record them in `docs/adr/` and `CONTEXT.md`. Specs and tickets come afterwards, from their own session.
+- **Specs and tickets:** `/to-spec`, then `/to-tickets`, in a fresh session.
+- **Prototyping** a screen or layout: lay the options out as artboards in a claude.ai Design canvas (the Artifact tool with `action: "quickstart"`, `intent: "design"`). Code stays on a `prototype/<name>` branch, and the ticket links the canvas. Call `impeccable:impeccable` for layout, critique and polish.
+- **Implementing:** `/implement` builds one ticket and `/implement-spec` a whole spec. Read `docs/agents/implementation.md` before the first test.
+- **Research:** the `research` skill, or `/research-wave` when the answer drives a costly decision. Findings go in a comment on the issue that asked the question, per upstream's "Plans and work artifacts".
+
+### Handoffs
+
+A handoff is written by `/handoff`; when the owner hasn't typed it, ask them to. After the handoff, give the owner one sentence to paste into a new session to start it, one sentence per handoff.
+
+### Subagents
+
+Claude Code's are in `.claude/agents/`; Codex takes its models for the same roles from `~/.codex/AGENTS.md`.
+
+- `/code-review` runs each of its two axes (Standards, Spec) in a `reviewer`.
+- `impeccable:impeccable`'s critique runs each of its two assessments (A, B) in a `design-auditor`.
+- `/implement-spec`'s implementers are `implementor` and `implementor-pro` (`docs/agents/implementation.md`).
+- `doc-auditor` audits a long document through one lens, one agent per lens.
+
+### Git hygiene
+
+`.gitignore` holds files that are **regenerable** or **private**; everything else is tracked source. When you add a tool that generates files, add its paths to `.gitignore` in the same commit, and for every environment variable the code reads, add a placeholder to `.env.example`. Before each commit, read `git status` and confirm every staged path is source you meant to commit.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `yuuga128/t3code` (public), managed with the `gh` CLI; every call targets the fork, never upstream. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Uses the five default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: upstream's `docs/internals/glossary.md` and `docs/internals/` (read-only), plus the fork's own `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
